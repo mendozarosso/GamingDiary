@@ -1,0 +1,25 @@
+﻿<div class="nav-menu">
+    <nav>
+        <div class="nav-item">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <i class="fas fa-home"></i> Inicio
+            </NavLink>
+        </div>
+
+        <AuthorizeView>
+            <Authorized>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="experiences">
+                        <i class="fas fa-gamepad"></i> Mis Vivencias
+                    </NavLink>
+                </div>
+            </Authorized>
+        </AuthorizeView>
+
+        <div class="nav-item">
+            <NavLink class="nav-link" href="about">
+                <i class="fas fa-info-circle"></i> Acerca de
+            </NavLink>
+        </div>
+    </nav>
+</div>

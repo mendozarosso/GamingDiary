@@ -1,0 +1,230 @@
+@page "/experiences"
+@using GamingDiary.Data
+@using GamingDiary.Models
+@using GamingDiary.Services
+@using Microsoft.EntityFrameworkCore
+@using System.Security.Claims
+@attribute [Authorize]
+@inject ApplicationDbContext Context
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IAuthService AuthService
+@inject NavigationManager NavigationManager
+
+<div class="experiences-container">
+    <h2>Mis Vivencias en Videojuegos</h2>
+    
+    @if (showAddExperience)
+    {
+        <div class="add-experience-form">
+            <EditForm Model="@newExperience" OnValidSubmit="SaveExperience">
+                <DataAnnotationsValidator />
+                
+                <div class="form-group">
+                    <label>Título:</label>
+                    <InputText @bind-Value="newExperience.Title" class="form-control" />
+                    <ValidationMessage For="@(() => newExperience.Title)" />
+                </div>
+                
+                <div class="form-group">
+                    <label>Descripción:</label>
+                    <InputTextArea @bind-Value="newExperience.Description" class="form-control" />
+                    <ValidationMessage For="@(() => newExperience.Description)" />
+                </div>
+                
+                <div class="form-group">
+                    <label>Fecha:</label>
+                    <InputDate @bind-Value="newExperience.Date" class="form-control" />
+                    <ValidationMessage For="@(() => newExperience.Date)" />
+                </div>
+                
+                <div class="form-group">
+                    <label>Imagen:</label>
+                    <InputFile OnChange="HandleFileSelection" class="form-control" accept=".jpg,.jpeg,.png" />
+                </div>
+                
+                <button type="submit" class="btn btn-primary">Guardar</button>
+                <button type="button" class="btn btn-secondary" @onclick="CancelAdd">Cancelar</button>
+            </EditForm>
+        </div>
+    }
+    else
+    {
+        <div class="add-experience">
+            <button @onclick="() => showAddExperience = true" class="btn btn-primary">
+                Agregar Nueva Vivencia
+            </button>
+        </div>
+    }
+    
+    <div class="experience-grid">
+        @foreach (var experience in userExperiences)
+        {
+            <div class="experience-card">
+                <img src="@(string.IsNullOrEmpty(experience.ImageUrl) ? defaultImage : experience.ImageUrl)" 
+                     alt="Experiencia" />
+                <h3>@experience.Title</h3>
+                <p>@experience.Description</p>
+                <small>@experience.Date.ToShortDateString()</small>
+            </div>
+        }
+    </div>
+    
+    @if (showPanicModal)
+    {
+        <div class="modal">
+            <div class="modal-content">
+                <h3>¿Estás seguro?</h3>
+                <p>Esta acción eliminará todas tus vivencias. Por favor, ingresa tu contraseña para confirmar:</p>
+                
+                <input type="password" @bind="panicPassword" />
+                
+                <div class="modal-buttons">
+                    <button class="btn btn-danger" @onclick="ExecutePanic">Confirmar</button>
+                    <button class="btn btn-secondary" @onclick="() => showPanicModal = false">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    }
+    
+    <div class="panic-button">
+        <button @onclick="() => showPanicModal = true" class="btn btn-danger">
+            🚨 Botón de Pánico
+        </button>
+    </div>
+</div>
+
+@code {
+    private List<GameExperience> userExperiences = new();
+    private string defaultImage = "/images/default-profile.png";
+    private bool showAddExperience = false;
+    private bool showPanicModal = false;
+    private string panicPassword = "";
+    private GameExperience newExperience = new() { Date = DateTime.Today };
+    private IBrowserFile selectedFile;
+    private int? currentUserId;
+    
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        
+        if (!user.Identity.IsAuthenticated)
+        {
+            NavigationManager.NavigateTo("/login");
+            return;
+        }
+
+        var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier);
+        if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var userId))
+        {
+            NavigationManager.NavigateTo("/login");
+            return;
+        }
+
+        currentUserId = userId;
+        await LoadExperiences();
+    }
+
+    private async Task LoadExperiences()
+    {
+        if (currentUserId.HasValue)
+        {
+            userExperiences = await Context.GameExperiences
+                .Where(e => e.UserId == currentUserId.Value)
+                .OrderByDescending(e => e.Date)
+                .ToListAsync();
+        }
+    }
+    
+    private async Task HandleFileSelection(InputFileChangeEventArgs e)
+    {
+        selectedFile = e.File;
+    }
+    
+    private async Task SaveExperience()
+    {
+        if (!currentUserId.HasValue)
+        {
+            NavigationManager.NavigateTo("/login");
+            return;
+        }
+
+        try
+        {
+            newExperience.UserId = currentUserId.Value;
+            
+            if (selectedFile != null)
+            {
+                var fileExtension = Path.GetExtension(selectedFile.Name).ToLowerInvariant();
+                var allowedExtensions = new[] { ".jpg", ".jpeg", ".png" };
+                
+                if (!allowedExtensions.Contains(fileExtension))
+                {
+                    // Manejar error de tipo de archivo inválido
+                    return;
+                }
+
+                // Crear el directorio si no existe
+                var uploadPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
+                if (!Directory.Exists(uploadPath))
+                {
+                    Directory.CreateDirectory(uploadPath);
+                }
+                
+                var fileName = $"{Guid.NewGuid()}{fileExtension}";
+                var filePath = Path.Combine(uploadPath, fileName);
+                
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                {
+                    await selectedFile.OpenReadStream(maxAllowedSize: 10485760) // 10MB max
+                        .CopyToAsync(stream);
+                }
+                
+                newExperience.ImageUrl = $"/uploads/{fileName}";
+            }
+            
+            Context.GameExperiences.Add(newExperience);
+            await Context.SaveChangesAsync();
+            
+            await LoadExperiences();
+            
+            newExperience = new GameExperience { Date = DateTime.Today };
+            showAddExperience = false;
+            selectedFile = null;
+        }
+        catch (Exception ex)
+        {
+            // Aquí podrías agregar algún manejo de errores
+            Console.WriteLine($"Error al guardar la experiencia: {ex.Message}");
+        }
+    }
+    
+    private void CancelAdd()
+    {
+        showAddExperience = false;
+        newExperience = new GameExperience { Date = DateTime.Today };
+        selectedFile = null;
+    }
+    
+    private async Task ExecutePanic()
+    {
+        if (!currentUserId.HasValue)
+        {
+            return;
+        }
+
+        if (await AuthService.ValidatePanic(currentUserId.Value, panicPassword))
+        {
+            var experiences = await Context.GameExperiences
+                .Where(e => e.UserId == currentUserId.Value)
+                .ToListAsync();
+                
+            Context.GameExperiences.RemoveRange(experiences);
+            await Context.SaveChangesAsync();
+            
+            userExperiences.Clear();
+            showPanicModal = false;
+            panicPassword = "";
+        }
+    }
+}

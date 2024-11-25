@@ -1,0 +1,45 @@
+﻿@inherits LayoutComponentBase
+@using System.Security.Claims
+@using GamingDiary.Services
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager NavigationManager
+
+<PageTitle>Diario de Videojuegos</PageTitle>
+
+<div class="page">
+    <div class="sidebar">
+        <div class="logo">
+            <img src="/images/game-controller.png" alt="Logo" />
+            <h1>Mi Diario Gamer</h1>
+        </div>
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row">
+            <AuthorizeView>
+                <Authorized>
+                    <span class="welcome-text">¡Hola, @context.User.Identity?.Name!</span>
+                    <button class="btn btn-logout" @onclick="HandleLogout">Cerrar Sesión</button>
+                </Authorized>
+                <NotAuthorized>
+                    <a href="/login" class="btn btn-login">Iniciar Sesión</a>
+                    <a href="/register" class="btn btn-register">Registrarse</a>
+                </NotAuthorized>
+            </AuthorizeView>
+        </div>
+
+        <article class="content">
+            @Body
+        </article>
+    </main>
+</div>
+
+@code {
+    private async Task HandleLogout()
+    {
+        var authStateProvider = (CustomAuthenticationStateProvider)AuthStateProvider;
+        authStateProvider.LogOut();
+        NavigationManager.NavigateTo("/login");
+    }
+}
